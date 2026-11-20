@@ -1,0 +1,54 @@
+name: stageproof
+
+on:
+  pull_request:
+    paths:
+      - "charts/**"
+      - "apps/**"
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Helm 3.22.1
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /tmp/helm.tgz https://get.helm.sh/helm-v3.22.1-linux-amd64.tar.gz
+          echo "896cf63684a42a723d61c980369d6e588330927deb13676ca0d85006dd6da0ea  /tmp/helm.tgz" | sha256sum -c -
+          tar -xzf /tmp/helm.tgz -C /tmp
+          sudo mv /tmp/linux-amd64/helm /usr/local/bin/helm
+
+      - name: Install Stageproof v0.1.8
+        run: |
+          set -euo pipefail
+          curl -fsSL -o checksums.txt https://github.com/stageproof/stageproof/releases/download/v0.1.8/checksums.txt
+          curl -fsSL -o stageproof_0.1.8_linux_amd64.tar.gz https://github.com/stageproof/stageproof/releases/download/v0.1.8/stageproof_0.1.8_linux_amd64.tar.gz
+          sha256sum -c checksums.txt --ignore-missing
+          tar -xzf stageproof_0.1.8_linux_amd64.tar.gz
+          sudo mv stageproof /usr/local/bin/stageproof
+
+      - name: Check the pull request
+        run: |
+          set +e
+          stageproof check-pr \
+            --current-git "origin/${{ github.base_ref }}" \
+            --current-k8s 1.35 \
+            --comment-file stageproof-comment.md \
+            --out stageproof-report.json
+          result=$?
+          set -e
+
+          if [ -f stageproof-comment.md ]; then
+            cat stageproof-comment.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          if [ "$result" -ne 0 ]; then
+            exit "$result"
+          fi
